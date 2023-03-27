@@ -1,7 +1,9 @@
 from os import mkdir
-from os.patorch import exists, isdir, join
+from os.path import exists, isdir, join
 from typing import Tuple
 
+from torch.utils.data import DataLoader
+import torch.nn.functional as Func
 import json
 import mlflow
 import torch
@@ -12,7 +14,6 @@ from agent import MultiAgent
 from model import CBISClassifierModel
 from metrics import ConfusionMeter, LossMeter
 from observation import observation
-from torch.utils.data import DataLoader
 
 
 def train(
@@ -124,31 +125,131 @@ def train(
         shuffle=True, num_workers=6, drop_last=False, pin_memory=True
     )
 
-    step = 0
+    i = 0
 
     conf_meter_train = ConfusionMeter(
         2,
         window_size=64
     )
 
-    patorch_loss_meter = LossMeter(window_size=64)
+    path_loss_meter = LossMeter(window_size=64)
     reward_meter = LossMeter(window_size=64)
     loss_meter = LossMeter(window_size=64)
 
     for epoch in range(n_epochs):
         model.train()
 
-        progress_bar = tqdm(train_dataloader)
-        for x, y in progress_bar:
+        progress_bar_eval = tqdm(train_dataloader)
+        for x, y in progress_bar_eval:
             x, y = x.to(torch.device(device_str)), \
                 y.to(torch.device(device_str))
 
-            predicitons, log_probabilities = exec_episode(
+            predictions, action_probabilities = train_episode(
                 multi_agent, x, epsilon, steps, device_str
             )
 
+            last_prediction = predictions[-1, :, :]
 
-def exec_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: float, steps: int, device: str) -> Tuple(torch.Tensor, torch.Tensor):
+            reward = -Func.cross_entropy(
+                last_prediction, y,
+                reduction="none"
+            )
+            path_sum = action_probabilities.sum(dim=0)
+            path_loss = path_sum.exp() * reward.detach()
+
+            loss = -(path_loss + reward).mean()
+
+            adam_optimizer.zero_grad()
+
+            loss.backward()
+
+            adam_optimizer.step()
+
+            conf_meter_train.add(last_prediction.detach(), y)
+
+            path_loss_meter.add(path_sum.mean().item())
+            reward_meter.add(reward.mean().item())
+            loss_meter.add(loss.item())
+
+            precision, recall = (
+                conf_meter_train.precision(),
+                conf_meter_train.recall()
+            )
+
+            if i % 100 == 0:
+                mlflow.log_metrics(step=i, metrics={
+                    "reward": reward.mean().item(),
+                    "path_loss": path_sum.mean().item(),
+                    "loss": loss.item(),
+                    "train_prec": precision.mean().item(),
+                    "train_rec": recall.mean().item(),
+                    "epsilon": epsilon
+                })
+
+            progress_bar_eval.set_description(
+                f"Epoch {e} - Train, "
+                f"precision = {precision.mean().item():.3f}, "
+                f"recall = {recall.mean().item():.3f}, "
+                f"loss = {loss_meter.loss():.4f}, "
+                f"reward = {reward_meter.loss():.4f}, "
+                f"path = {path_loss_meter.loss():.4f}, "
+                f"eps = {epsilon:.4f}"
+            )
+
+            epsilon *= epsilon_decay
+            epsilon = max(epsilon, 0.)
+
+            i += 1
+
+        model.eval()
+        conf_meter_eval = ConfusionMeter(2, None)
+
+        with torch.no_grad():
+            progress_bar_eval = tqdm(test_dataloader)
+            for x_test, y_test in progress_bar_eval:
+                x_test, y_test = x_test.to(torch.device(device_str)), \
+                    y_test.to(torch.device(device_str))
+
+                predictions, _ = eval_episode(multi_agent, x_test, 0., steps)
+
+                conf_meter_eval.add(predictions.detach(), y_test)
+
+                precision, recall = (
+                    conf_meter_eval.precision(),
+                    conf_meter_eval.recall()
+                )
+
+                progress_bar_eval.set_description(
+                    f"Epoch {e} - Eval, "
+                    f"precision = {precision.mean().item():.4f}, "
+                    f"recall = {recall.mean().item():.4f}"
+                )
+
+        precision, recall = (
+            conf_meter_eval.precision(),
+            conf_meter_eval.recall()
+        )
+
+        conf_meter_eval.save_conf_matrix(epoch, output_dir, "eval")
+
+        mlflow.log_metrics(step=i, metrics={
+            "eval_precision": precision.mean().item(),
+            "eval_recall": recall.mean().item()
+        })
+
+        model.json_args(
+            join(output_dir,
+                 model_dir,
+                 f"marl_epoch_{epoch}.json")
+        )
+        torch.save(
+            model.state_dict(),
+            join(output_dir, model_dir,
+                 f"nn_models_epoch_{epoch}.pt")
+        )
+
+
+def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: float, steps: int, device: str) -> Tuple(torch.Tensor, torch.Tensor):
     img_size = [size for size in img_batch.size()[2:]]
     batch_size = img_batch.size(0)
 
@@ -174,3 +275,17 @@ def exec_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: floa
 
     return multi_agent.predict()
 
+
+def eval_episode(
+        agents: MultiAgent,
+        img_batch: torch.Tensor,
+        steps: int,
+        epsilon: float,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    img_sizes = [s for s in img_batch.size()[2:]]
+    agents.init_episode(img_batch.size(0), img_sizes)
+
+    for t in range(steps):
+        agents.step(img_batch, epsilon)
+
+    return agents.predict()

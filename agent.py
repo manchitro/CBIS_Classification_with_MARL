@@ -1,5 +1,5 @@
 import json
-from typing import Callable, Tuple, List
+from typing import Callable, Tuple, List, Any
 
 from model import CBISClassifierModel
 
@@ -90,6 +90,34 @@ class MultiAgent:
                           batch_size), device=torch.device(self.device))
             for i_s in img_size], dim=-1)
 
+    def get_next_action(self, rewards: Any, epsilon: float) -> Tuple[torch.Tensor, torch.Tensor]:
+        actions = torch.Tensor(
+            self.actions,
+            device=torch.device(self.device)
+        )
+
+        _, best_actions = rewards.max(dim=-1)
+
+        random_actions = torch.randint(
+            0, len(self.actions),
+            (self.n_agents, self.batch_size),
+            device=torch.device(self.device)
+        )
+
+        use_greedy = torch.gt(
+            torch.rand(
+                (self.n_agents, self.batch_size),
+                device=torch.device(self.device)
+            ),
+            epsilon
+        ).to(torch.int)
+
+        final_actions = (
+            use_greedy * best_actions +
+            (1 - use_greedy) * random_actions
+        )
+        return final_actions, actions[final_actions]
+
     def step(self, img: torch.Tensor, epsilon: float) -> None:
         img_sizes = [s for s in img.size()[2:]]
         n_agents = self.n_agents
@@ -134,33 +162,7 @@ class MultiAgent:
             self.hidden_state_action[self.t + 1],
         )
 
-        actions = torch.Tensor(
-            self.actions,
-            device=torch.device(self.device)
-        )
-
-        _, best_actions = rewards.max(dim=-1)
-
-        random_actions = torch.randint(
-            0, len(self.actions),
-            (n_agents, self.batch_size),
-            device=torch.device(self.device)
-        )
-
-        use_greedy = torch.gt(
-            torch.rand(
-                (n_agents, self.batch_size),
-                device=torch.device(self.device)
-            ),
-            epsilon
-        ).to(torch.int)
-
-        final_actions = (
-            use_greedy * best_actions +
-            (1 - use_greedy) * random_actions
-        )
-
-        next_action_t = actions[final_actions]
+        final_actions, next_action_t = self.get_next_action(self, rewards, epsilon)
 
         self.action_probabilities.append(
             rewards
@@ -176,6 +178,15 @@ class MultiAgent:
         ).to(torch.long)
 
         self.__t += 1
+
+    def predict(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return (
+            self.model(
+                self.model.module_prediction,
+                self.hidden_state_belief[-1]
+            ).mean(dim=0),
+            self.action_probabilities[-1].log().sum(dim=0)
+        )
 
     @ property
     def is_cuda(self) -> bool:

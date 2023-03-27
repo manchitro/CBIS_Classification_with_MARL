@@ -15,8 +15,16 @@ from transforms import Normalization
 
 
 class CBISDataset(Dataset):
-    def __init__(self, resource_path: str):
+    def __init__(self, resource_path: str, mass: bool, calc: bool):
         super().__init__()
+
+        dataset_to_train = ""
+        if mass and not calc:
+            dataset_to_train = "mass"
+        elif calc and not mass:
+            dataset_to_train = "calc"
+        else:
+            dataset_to_train = "mass"
 
         self.__cbis_root_path = resource_path
 
@@ -39,80 +47,61 @@ class CBISDataset(Dataset):
 
         tqdm.tqdm.pandas()
 
-        # mass dataset
-        self.dataset_mass_train = [
-            (str(path), label)
-            for path, label in zip(
-                mass_train_csv["cropped image file path"].tolist(),
-                mass_train_csv["pathology"].tolist()
-            )
-        ]
-        self.dataset_mass_test = [
-            (str(path), label)
-            for path, label in zip(
-                mass_test_csv["cropped image file path"].tolist(),
-                mass_test_csv["pathology"].tolist()
-            )
-        ]
+        self.dataset_train = []
+        self.dataset_test = []
 
-        # calc dataset
-        self.dataset_calc_train = [
-            (str(path), label)
-            for path, label in zip(
-                calc_train_csv["cropped image file path"].tolist(),
-                calc_train_csv["pathology"].tolist()
-            )
-        ]
-        self.dataset_calc_test = [
-            (str(path), label)
-            for path, label in zip(
-                calc_test_csv["cropped image file path"].tolist(),
-                calc_test_csv["pathology"].tolist()
-            )
-        ]
+        if dataset_to_train == "mass":
+            self.dataset_train = [
+                (str(path), label)
+                for path, label in zip(
+                    mass_train_csv["cropped image file path"].tolist(),
+                    mass_train_csv["pathology"].tolist()
+                )
+            ]
+            self.dataset_test = [
+                (str(path), label)
+                for path, label in zip(
+                    mass_test_csv["cropped image file path"].tolist(),
+                    mass_test_csv["pathology"].tolist()
+                )
+            ]
+        elif dataset_to_train == "calc":
+            self.dataset_train = [
+                (str(path), label)
+                for path, label in zip(
+                    calc_train_csv["cropped image file path"].tolist(),
+                    calc_train_csv["pathology"].tolist()
+                )
+            ]
+            self.dataset_test = [
+                (str(path), label)
+                for path, label in zip(
+                    calc_test_csv["cropped image file path"].tolist(),
+                    calc_test_csv["pathology"].tolist()
+                )
+            ]
 
-        self.n_dataset_mass_train = len(self.dataset_mass_train)
-        self.n_dataset_mass_test = len(self.dataset_mass_test)
-        # print('mass_train_csv length: ', self.n_dataset_mass_train)
-        # print('mass_test_csv length: ', self.n_dataset_mass_test)
-        print('mass_csv length: ', self.n_dataset_mass_test +
-              self.n_dataset_mass_train)
-
-        self.n_dataset_calc_train = len(self.dataset_calc_train)
-        self.n_dataset_calc_test = len(self.dataset_calc_test)
-        # print('calc_train_csv length: ', self.n_dataset_calc_train)
-        # print('calc_test_csv length: ', self.n_dataset_calc_test)
-        print('calc_csv length: ', self.n_dataset_calc_test +
-              self.n_dataset_calc_train)
-
-        self.dataset_mass = self.dataset_mass_train + self.dataset_mass_test
-        self.dataset_calc = self.dataset_calc_train + self.dataset_calc_test
-        self.n_mass_dataset = len(self.dataset_mass)
-        self.n_calc_dataset = len(self.dataset_calc)
-
-        self.original_dataset = self.dataset_mass
-        print("original dataset length: ", len(self.original_dataset))
+        print("train dataset length: ", dataset_to_train, len(self.dataset_train))
+        print("test dataset length: ", dataset_to_train, len(self.dataset_test))
 
         # augmented datasets
-        self.augments = ["original", "h_flip_90", "v_flip_90",
+        self.augments = ["original", "h_flip", "v_flip", "90", "180", "270", "h_flip_90", "v_flip_90",
                          "h_flip_180", "v_flip_180", "h_flip_270", "v_flip_270"]
         self.augments_indices = []
 
-        self.__dataset = []
+        self.aug_dataset_train = []
 
         i = 0
         j = 0
         for augment in self.augments:
-            self.__dataset = self.__dataset + self.original_dataset
-            j = len(self.__dataset)
+            self.aug_dataset_train = self.aug_dataset_train + self.dataset_train
+            j = len(self.aug_dataset_train)
             self.augments_indices.append([i, j])
             i = j + 1
 
-        self.n_dataset = len(self.__dataset)
-
         for i in range(len(self.augments)):
             print(self.augments[i], self.augments_indices[i])
-        print("dataset length: ", self.n_dataset)
+        print("augmented training dataset length: ", len(self.aug_dataset_train))
 
         self.class_to_idx = {
             "benign": 0,
@@ -120,7 +109,7 @@ class CBISDataset(Dataset):
         }
 
     def getCroppedImagePathFromCSVPath(self, path: str):
-        components = patorch.split('/')
+        components = path.split('/')
         folder_name = components[2]
         images = listdir(join(self.__cbis_root_path, "jpeg", folder_name))
 
@@ -156,6 +145,31 @@ class CBISDataset(Dataset):
 
         if augment == "original":
             transforms = tr.Compose([
+                tr.ToTensor()
+            ])
+        if augment == "h_flip":
+            transforms = tr.Compose([
+                tr.RandomHorizontalFlip(p=1),
+                tr.ToTensor()
+            ])
+        if augment == "v_flip":
+            transforms = tr.Compose([
+                tr.RandomHorizontalFlip(p=1),
+                tr.ToTensor()
+            ])
+        if augment == "90":
+            transforms = tr.Compose([
+                tr.RandomRotation(degrees=90),
+                tr.ToTensor()
+            ])
+        if augment == "180":
+            transforms = tr.Compose([
+                tr.RandomRotation(degrees=180),
+                tr.ToTensor()
+            ])
+        if augment == "270":
+            transforms = tr.Compose([
+                tr.RandomRotation(degrees=270),
                 tr.ToTensor()
             ])
         if augment == "h_flip_90":

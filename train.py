@@ -112,8 +112,8 @@ def train(
     adam_optimizer = torch.optim.Adam(model.get_params(
         CBISClassifierModel.param_list), lr=learning_rate)
 
-    train_dataset = dataset.dataset_mass_train
-    test_dataset = dataset.dataset_mass_test
+    train_dataset = dataset.aug_dataset_train
+    test_dataset = dataset.dataset_test
 
     train_dataloader = DataLoader(
         train_dataset, batch_size=batch_size,

@@ -3,6 +3,8 @@ import argparse
 from dataset import CBISDataset
 
 parser = argparse.ArgumentParser(description='CBIS-DDSM Classification with Multi-Agent Reinforcement Learning')
+parser.add_argument('--mass', type=bool, default=False, help='Test Mass Dataset')
+parser.add_argument('--calc', type=bool, default=False, help='Test Calcification Dataset')
 parser.add_argument('--n_agents', type=int, default=5, help='Number of agents')
 parser.add_argument('--steps', type=int, default=100, help='Number of steps agents take per episode')
 parser.add_argument('--cuda', action='store_true', help='Use CUDA if available')
@@ -24,6 +26,6 @@ args = parser.parse_args()
 
 dataset_constructor = CBISDataset
 
-dataset = dataset_constructor("cbis")
+dataset = dataset_constructor("cbis", args.mass, args.calc)
 
 dataset.__getitem__(0)

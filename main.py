@@ -1,10 +1,11 @@
 import argparse
 
 from dataset import CBISDataset
+from train import train
 
 parser = argparse.ArgumentParser(description='CBIS-DDSM Classification with Multi-Agent Reinforcement Learning')
-parser.add_argument('--mass', type=bool, default=False, help='Test Mass Dataset')
-parser.add_argument('--calc', type=bool, default=False, help='Test Calcification Dataset')
+parser.add_argument('--mass', action="store_true", help='Test Mass Dataset')
+parser.add_argument('--calc', action="store_true", help='Test Calcification Dataset')
 parser.add_argument('--n_agents', type=int, default=5, help='Number of agents')
 parser.add_argument('--steps', type=int, default=100, help='Number of steps agents take per episode')
 parser.add_argument('--cuda', action='store_true', help='Use CUDA if available')
@@ -28,4 +29,22 @@ dataset_constructor = CBISDataset
 
 dataset = dataset_constructor("cbis", args.mass, args.calc)
 
-dataset.__getitem__(0)
+train(
+	args.mlflow_id,
+	args.n_epochs,
+	args.steps,
+	args.cuda,
+	args.n_agents,
+	args.belief_lstm_size,
+	args.action_lstm_size,
+	args.hidden_layer_size_belief,
+	args.hidden_layer_size_action,
+	args.state_size,
+	args.message_size,
+	args.window_size,
+	args.step_size,
+	args.epsilon,
+	args.epsilon_decay,
+	args.learning_rate,
+	args.batch_size,
+)

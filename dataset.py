@@ -101,8 +101,11 @@ class CBISDataset(Dataset):
 
         for i in range(len(self.augments)):
             print(self.augments[i], self.augments_indices[i])
-        print("augmented training dataset length: ", len(self.aug_dataset_train))
+        print("augmented training dataset length: ",
+              len(self.aug_dataset_train))
 
+        self.__dataset = self.aug_dataset_train
+		
         self.class_to_idx = {
             "benign": 0,
             "malignant": 1,
@@ -154,7 +157,7 @@ class CBISDataset(Dataset):
             ])
         if augment == "v_flip":
             transforms = tr.Compose([
-                tr.RandomHorizontalFlip(p=1),
+                tr.RandomVerticalFlip(p=1),
                 tr.ToTensor()
             ])
         if augment == "90":

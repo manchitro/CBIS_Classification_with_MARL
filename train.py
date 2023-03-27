@@ -2,7 +2,7 @@ from os import mkdir
 from os.path import exists, isdir, join
 from typing import Tuple
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as Func
 import json
 import mlflow
@@ -14,6 +14,7 @@ from agent import MultiAgent
 from model import CBISClassifierModel
 from metrics import ConfusionMeter, LossMeter
 from observation import observation
+from transition import transition
 
 
 def train(
@@ -60,8 +61,6 @@ def train(
         step_size,
         hidden_layer_size_belief,
         hidden_layer_size_action,
-        observation,
-
     )
 
     dataset_constructor = CBISDataset
@@ -77,7 +76,8 @@ def train(
         step_size,
         batch_size,
         model,
-        observation
+        observation,
+		transition
     )
 
     mlflow.log_params({
@@ -112,8 +112,17 @@ def train(
     adam_optimizer = torch.optim.Adam(model.get_params(
         CBISClassifierModel.param_list), lr=learning_rate)
 
-    train_dataset = dataset.aug_dataset_train
-    test_dataset = dataset.dataset_test
+    train_test_ratio = 0.80
+    idx = torch.tensor(list(range(0, len(dataset)-1)))
+    idx_train = idx[:int(train_test_ratio * idx.size()[0])]
+    idx_test = idx[int(train_test_ratio * idx.size()[0]):]
+    print("idx_train", idx_train)
+    print("idx_test", idx_test)
+
+    train_dataset = Subset(dataset, idx_train)
+    print('train length: ', len(train_dataset))
+    test_dataset = Subset(dataset, idx_test)
+    print('test length: ', len(test_dataset))
 
     train_dataloader = DataLoader(
         train_dataset, batch_size=batch_size,

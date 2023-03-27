@@ -74,9 +74,9 @@ def train(
         window_size,
         message_size,
         step_size,
-		batch_size,
-		model,
-		observation
+        batch_size,
+        model,
+        observation
     )
 
     mlflow.log_params({
@@ -171,3 +171,6 @@ def exec_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: floa
 
     for t in range(steps):
         multi_agent.step(img_batch, epsilon)
+
+    return multi_agent.predict()
+

@@ -24,6 +24,8 @@ class MultiAgent:
         self.n_agents = n_agents
         self.window_size = window_size
         self.batch_size = batch_size
+        self.actions = [[step_size, 0], [-step_size, 0],
+                        [0, step_size], [0, -step_size]]
 
         self.belief_lstm_size = belief_lstm_size
         self.action_lstm_size = action_lstm_size
@@ -101,6 +103,79 @@ class MultiAgent:
         aggregate_msg = (
             (current_msg_mean * n_agents - current_msg) / (n_agents - 1)
         )
+
+        normalized_positions = self.positions.to(
+            torch.float) / torch.Tensor([[img_sizes]], device=torch.device(self.device))
+        spatial_state = self.model(
+            self.model.module_position_map, normalized_positions)
+
+        information_unit_t = torch.cat(
+            (features_t, aggregate_msg, spatial_state), dim=2)
+
+        next_hidden_state_belief, next_cell_state_belief = self.model(
+            self.model.module_belief_unit, self.hidden_state_belief[self.t], self.cell_state_belief[self.t], information_unit_t)
+
+        self.hidden_state_belief.append(next_hidden_state_belief)
+        self.cell_state_belief.append(next_cell_state_belief)
+
+        next_hidden_state_action, next_cell_state_action = self.model(
+            self.model.module_action_unit, self.hidden_state_action[self.t], self.cell_state_action[self.t], information_unit_t)
+
+        self.hidden_state_action.append(next_hidden_state_action)
+        self.cell_state_action.append(next_cell_state_action)
+
+        self.msg.append(self.model(
+            self.model.module_message_eval,
+            self.hidden_state_belief[self.t + 1]
+        ))
+
+        rewards = self.model(
+            self.model.module_policy,
+            self.hidden_state_action[self.t + 1],
+        )
+
+        actions = torch.Tensor(
+            self.actions,
+            device=torch.device(self.device)
+        )
+
+        _, best_actions = rewards.max(dim=-1)
+
+        random_actions = torch.randint(
+            0, len(self.actions),
+            (n_agents, self.batch_size),
+            device=torch.device(self.device)
+        )
+
+        use_greedy = torch.gt(
+            torch.rand(
+                (n_agents, self.batch_size),
+                device=torch.device(self.device)
+            ),
+            epsilon
+        ).to(torch.int)
+
+        final_actions = (
+            use_greedy * best_actions +
+            (1 - use_greedy) * random_actions
+        )
+
+        next_action_t = actions[final_actions]
+
+        self.action_probabilities.append(
+            rewards
+            .gather(-1, final_actions.unsqueeze(-1))
+            .squeeze(-1)
+        )
+
+        # update agent state
+        self.positions = self.__trans(
+            self.pos.to(torch.float),
+            next_action_t, self.window_size,
+            img_sizes
+        ).to(torch.long)
+
+        self.__t += 1
 
     @ property
     def is_cuda(self) -> bool:

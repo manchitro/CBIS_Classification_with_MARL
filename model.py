@@ -5,33 +5,34 @@ import torch.nn as nn
 import json
 
 from feature_extractor import CBISFeatureExtractor, AgentStateToFeatures
-from messages import MessageSender
+from messages import MessageEval
 from lstm import LSTMCell
-from policy import Policy
+from policy import ActionPolicy
 from prediction import Prediction
 
 
 class CBISClassifierModel(nn.Module):
 
-    module_observation_map: str = "feature_map"
+    module_feature_map: str = "feature_map"
     module_position_map: str = "state_map"
     module_message_eval: str = "msg_map"
     module_belief_unit: str = "belief_unit"
     module_action_unit: str = "action_unit"
-    module_policy: str = "policy_map"
+    module_action_policy: str = "policy_map"
     module_prediction: str = "prediction_map"
 
     param_list: Set[str] = {
-        module_observation_map,
+        module_feature_map,
         module_position_map,
         module_message_eval,
         module_belief_unit,
         module_action_unit,
-        module_policy,
+        module_action_policy,
         module_prediction
     }
 
-    def __init__(self, window_size: int,
+    def __init__(self,
+                 window_size: int,
                  hidden_belief: int,
                  hidden_action: int,
                  message_size: int,
@@ -41,7 +42,9 @@ class CBISClassifierModel(nn.Module):
                  hidden_layer_size_action: int,
                  ) -> None:
 
-        self.window_size = window_size
+        super().__init__()
+
+        self.__window_size = window_size
         self.hidden_belief = hidden_belief
         self.hidden_action = hidden_action
         self.message_size = message_size
@@ -50,17 +53,19 @@ class CBISClassifierModel(nn.Module):
         self.hidden_layer_size_action = hidden_layer_size_action
         self.hidden_layer_size_belief = hidden_layer_size_belief
 
-        observation_module = CBISFeatureExtractor(window_size)
+        self.n_actions = 4
+
+        feature_extractor_module = CBISFeatureExtractor(window_size)
 
         self.network_dict = nn.ModuleDict({
-            self.module_observation_map: observation_module,
+            self.module_feature_map: feature_extractor_module,
             self.module_position_map: AgentStateToFeatures(2, state_size),
-            self.module_message_eval: MessageSender(hidden_belief, message_size, hidden_layer_size_belief),
-            self.module_belief_unit: LSTMCell(observation_module.out_size + state_size + message_size, hidden_belief),
-            self.module_action_unit: LSTMCell(observation_module.out_size + state_size + message_size, hidden_action),
-            self.module_policy: Policy(step_size, hidden_action, hidden_layer_size_action),
+            self.module_message_eval: MessageEval(hidden_belief, message_size, hidden_layer_size_belief),
+            self.module_belief_unit: LSTMCell(feature_extractor_module.out_size + state_size + message_size, hidden_belief),
+            self.module_action_unit: LSTMCell(feature_extractor_module.out_size + state_size + message_size, hidden_action),
+            self.module_action_policy: ActionPolicy(self.n_actions, hidden_action, hidden_layer_size_action),
             self.module_prediction: Prediction(
-                hidden_belief, 2, hidden_layer_size_belief)
+                hidden_belief, self.n_class, hidden_layer_size_belief)
         })
 
     def forward(self, module: str, *args):
@@ -72,7 +77,7 @@ class CBISClassifierModel(nn.Module):
 
     @property
     def window_size(self) -> int:
-        return self.window_size
+        return self.__window_size
 
     def get_params(self, module_names: List[str]) -> List[th.Tensor]:
         return [
@@ -84,7 +89,7 @@ class CBISClassifierModel(nn.Module):
         json_f = open(out_json_path, "w")
 
         args_d = {
-            "window_size": self.window_size,
+            "window_size": self.__window_size,
             "hidden_belief": self.hidden_belief,
             "hidden_action": self.hidden_action,
             "message_size": self.message_size,

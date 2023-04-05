@@ -1,0 +1,1 @@
+{"window_size": 20, "hidden_belief": 128, "hidden_action": 128, "message_size": 16, "state_size": 8, "step_size": 10, "hidden_layer_size_action": 64, "hidden_layer_size_belief": 64}

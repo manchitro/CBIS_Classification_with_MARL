@@ -7,25 +7,30 @@ class CBISFeatureExtractor(nn.Module):
     def __init__(self, window_size: int) -> None:
         super().__init__()
 
-        self.__seq_conv = nn.Sequential(
+        self.conv_sequential = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=(3, 3), padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2),  # out: 16 x 8 x 8
+
             nn.Conv2d(16, 32, kernel_size=(3, 3), padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Flatten(1, -1)
+            nn.MaxPool2d(2, 2),  # out: 32 x 4 x 4
+
+            nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),  # out: 64 x 2 x 2
+
+            nn.Flatten(1, -1),  # out: 64 x 1
         )
 
-        self.__out_size = 32 * (window_size // 4) ** 2
+        self.__out_size = 64 * (window_size // 8) ** 2
 
-        for m in self.__seq_conv:
+        for m in self.conv_sequential:
             if isinstance(m, nn.Conv2d):
                 nn.init.xavier_uniform_(m.weight)
 
     def forward(self, o_t: torch.Tensor) -> torch.Tensor:
-        o_t = o_t[:, 0, None, :, :]  # grey scale
-        return self.__seq_conv(o_t)
+        return self.conv_sequential(o_t)
 
     @property
     def out_size(self) -> int:
@@ -39,11 +44,50 @@ class AgentStateToFeatures(nn.Module):
         self.dimensions = dimensions
         self.state_size = state_size
 
-        self.__seq_lin = nn.Sequential(
-            nn.Linear(in_features=self.dimensions,
-                      out_features=self.state_size),
+        self.linear_sequential = nn.Sequential(
+            nn.Linear(in_features=self.dimensions, out_features=self.state_size),
             nn.ReLU()
         )
 
-    def forward(self, p_t: torch.Tensor) -> torch.Tensor:
-        return self.__seq_lin(p_t)
+    def forward(self, position_t: torch.Tensor) -> torch.Tensor:
+        return self.linear_sequential(position_t)
+
+################################################################
+        # from https://jovian.ml/aakashns/05-cifar10-cnn
+
+
+cifar10 = nn.Sequential(
+    # in: 1 x window_size x window_size (1 x 32 x 32 default)
+    nn.Conv2d(1, 32, kernel_size=(3, 3), padding=1),
+    nn.ReLU(),
+    nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),  # output: 64 x 16 x 16
+
+    nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+    nn.ReLU(),
+    nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),  # output: 128 x 8 x 8
+
+    nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+    nn.ReLU(),
+    nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),  # output: 256 x 4 x 4
+
+    nn.Flatten(1, -1)
+)
+
+
+default = nn.Sequential(
+    nn.Conv2d(1, 16, kernel_size=(3, 3), padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),
+
+    nn.Conv2d(16, 32, kernel_size=(3, 3), padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),
+
+    nn.Flatten(1, -1)
+)

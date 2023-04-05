@@ -7,7 +7,7 @@ import torch.nn.functional as Func
 import json
 import mlflow
 import torch
-import tqdm
+from tqdm import tqdm
 
 from dataset import CBISDataset
 from agent import MultiAgent
@@ -18,6 +18,7 @@ from transition import transition
 
 
 def train(
+    dataset_to_train: str,
         mlflow_id: str,
         n_epochs: int,
         steps: int,
@@ -40,6 +41,11 @@ def train(
     output_dir = "output"
     model_dir = "models"
 
+    if not exists(output_dir):
+        mkdir(output_dir)
+    if exists(output_dir) and not isdir(output_dir):
+        raise Exception(f"\"{output_dir}\""
+                        f"is not a directory.")
     if not exists(join(output_dir, model_dir)):
         mkdir(join(output_dir, model_dir))
     if exists(join(output_dir, model_dir)) and not isdir(join(output_dir, model_dir)):
@@ -65,7 +71,7 @@ def train(
 
     dataset_constructor = CBISDataset
 
-    dataset = dataset_constructor(resource_dir)
+    dataset = dataset_constructor(resource_dir, dataset_to_train)
 
     multi_agent = MultiAgent(
         n_agents,
@@ -77,7 +83,7 @@ def train(
         batch_size,
         model,
         observation,
-		transition
+        transition
     )
 
     mlflow.log_params({
@@ -113,15 +119,35 @@ def train(
         CBISClassifierModel.param_list), lr=learning_rate)
 
     train_test_ratio = 0.80
-    idx = torch.tensor(list(range(0, len(dataset)-1)))
-    idx_train = idx[:int(train_test_ratio * idx.size()[0])]
-    idx_test = idx[int(train_test_ratio * idx.size()[0]):]
-    print("idx_train", idx_train)
-    print("idx_test", idx_test)
+    index = torch.tensor(list(range(0, len(dataset)-1)))
+    index_train = index[:int(train_test_ratio * index.size()[0])]
+    index_test = index[int(train_test_ratio * index.size()[0]):]
+    print("index:", index)
+    print("idx_train", index_train)
+    print("idx_test", index_test)
 
-    train_dataset = Subset(dataset, idx_train)
+    # # save augmented images
+    # aug_img_dir = "aug_imgs"
+    # if not exists(join(output_dir, aug_img_dir)):
+    #     mkdir(join(output_dir, aug_img_dir))
+    # if exists(join(output_dir, aug_img_dir)) and not isdir(join(output_dir, model_dir)):
+    #     raise Exception(f"\"{join(output_dir, aug_img_dir)}\""
+    #                     f"is not a directory.")
+    # offset = 4
+    # for i, index in enumerate(dataset.augments_indices):
+    #     print(i, index)
+    #     img, label = dataset.__getitem__(
+    #         (index[0] if i == 0 else index[0]-1) + offset)
+    #     fig = plt.figure()
+    #     plt.imshow(img.permute(1, 2, 0), cmap="gray")
+    #     plt.title(dataset.augments[i])
+    #     plt.savefig(join(output_dir, aug_img_dir,
+    #                 f"img_"+dataset.augments[i]+".png"))
+    #     plt.close(fig)
+
+    train_dataset = Subset(dataset, index_train)
     print('train length: ', len(train_dataset))
-    test_dataset = Subset(dataset, idx_test)
+    test_dataset = Subset(dataset, index_test)
     print('test length: ', len(test_dataset))
 
     train_dataloader = DataLoader(
@@ -148,12 +174,12 @@ def train(
     for epoch in range(n_epochs):
         model.train()
 
-        progress_bar_eval = tqdm(train_dataloader)
-        for x, y in progress_bar_eval:
+        progress_bar = tqdm(train_dataloader)
+        for x, y in progress_bar:
             x, y = x.to(torch.device(device_str)), \
                 y.to(torch.device(device_str))
 
-            predictions, action_probabilities = train_episode(
+            predictions, action_probabilities, step_positions = train_episode(
                 multi_agent, x, epsilon, steps, device_str
             )
 
@@ -195,8 +221,8 @@ def train(
                     "epsilon": epsilon
                 })
 
-            progress_bar_eval.set_description(
-                f"Epoch {e} - Train, "
+            progress_bar.set_description(
+                f"Epoch {epoch} - Train, "
                 f"precision = {precision.mean().item():.3f}, "
                 f"recall = {recall.mean().item():.3f}, "
                 f"loss = {loss_meter.loss():.4f}, "
@@ -214,8 +240,8 @@ def train(
         conf_meter_eval = ConfusionMeter(2, None)
 
         with torch.no_grad():
-            progress_bar_eval = tqdm(test_dataloader)
-            for x_test, y_test in progress_bar_eval:
+            progress_bar = tqdm(test_dataloader)
+            for x_test, y_test in progress_bar:
                 x_test, y_test = x_test.to(torch.device(device_str)), \
                     y_test.to(torch.device(device_str))
 
@@ -228,8 +254,8 @@ def train(
                     conf_meter_eval.recall()
                 )
 
-                progress_bar_eval.set_description(
-                    f"Epoch {e} - Eval, "
+                progress_bar.set_description(
+                    f"Epoch {epoch} - Eval, "
                     f"precision = {precision.mean().item():.4f}, "
                     f"recall = {recall.mean().item():.4f}"
                 )
@@ -258,7 +284,7 @@ def train(
         )
 
 
-def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: float, steps: int, device: str) -> Tuple(torch.Tensor, torch.Tensor):
+def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: float, steps: int, device: str) -> Tuple[torch.Tensor, torch.Tensor]:
     img_size = [size for size in img_batch.size()[2:]]
     batch_size = img_batch.size(0)
 
@@ -266,15 +292,18 @@ def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: flo
 
     img_batch = img_batch.to(torch.device(device))
 
+	# step position = (for each step, for each agent, for each image in batch, 2 position values x and y)
     step_positions = torch.zeros(
         steps, *multi_agent.positions.size(), dtype=torch.long,
         device=torch.device(device)
     )
 
+	# step predictions = (for each step, for each image in batch, 2 values: probalibility of benign and malignant)
     step_predictions = torch.zeros(
         steps, batch_size, 2, device=torch.device(device)
     )
 
+	# step probabilities = (for each step, for each image in batch, one value for the probability of taking next step?)
     step_probabilities = torch.zeros(
         steps, batch_size, device=torch.device(device)
     )
@@ -282,14 +311,21 @@ def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: flo
     for t in range(steps):
         multi_agent.step(img_batch, epsilon)
 
-    return multi_agent.predict()
+        step_positions[t, :, :] = multi_agent.positions
+
+        predictions, probabilities = multi_agent.predict()
+
+        step_predictions[t, :, :] = predictions
+        step_probabilities[t, :] = probabilities
+
+    return step_predictions, step_probabilities, step_positions
 
 
 def eval_episode(
         agents: MultiAgent,
         img_batch: torch.Tensor,
-        steps: int,
         epsilon: float,
+        steps: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     img_sizes = [s for s in img_batch.size()[2:]]
     agents.init_episode(img_batch.size(0), img_sizes)

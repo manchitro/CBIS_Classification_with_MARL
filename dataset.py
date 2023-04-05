@@ -15,16 +15,8 @@ from transforms import Normalization
 
 
 class CBISDataset(Dataset):
-    def __init__(self, resource_path: str, mass: bool, calc: bool):
+    def __init__(self, resource_path: str, dataset_to_train: str):
         super().__init__()
-
-        dataset_to_train = ""
-        if mass and not calc:
-            dataset_to_train = "mass"
-        elif calc and not mass:
-            dataset_to_train = "calc"
-        else:
-            dataset_to_train = "mass"
 
         self.__cbis_root_path = resource_path
 
@@ -105,7 +97,7 @@ class CBISDataset(Dataset):
               len(self.aug_dataset_train))
 
         self.__dataset = self.aug_dataset_train
-		
+
         self.class_to_idx = {
             "benign": 0,
             "malignant": 1,
@@ -127,13 +119,8 @@ class CBISDataset(Dataset):
         f = open(path, 'rb')
         img = Image.open(f)
         resized_img = img.resize((200, 200))
-        grey_img = resized_img.convert('L')
-        grey_img_clahe = exposure.equalize_adapthist(
-            np.array(grey_img), clip_limit=0.03)
-        img_clahe_pil = Image.fromarray(
-            (grey_img_clahe * 255).astype(np.uint8)).convert('L')
         f.close()
-        return img_clahe_pil
+        return resized_img
 
     def __open_img(self, path: str, index: int) -> torch.Tensor:
         file = self.cbis_pil_loader(
@@ -162,69 +149,62 @@ class CBISDataset(Dataset):
             ])
         if augment == "90":
             transforms = tr.Compose([
-                tr.RandomRotation(degrees=90),
+                tr.RandomRotation(degrees=(90, 90)),
                 tr.ToTensor()
             ])
         if augment == "180":
             transforms = tr.Compose([
-                tr.RandomRotation(degrees=180),
+                tr.RandomRotation(degrees=(180, 180)),
                 tr.ToTensor()
             ])
         if augment == "270":
             transforms = tr.Compose([
-                tr.RandomRotation(degrees=270),
+                tr.RandomRotation(degrees=(270, 270)),
                 tr.ToTensor()
             ])
         if augment == "h_flip_90":
             transforms = tr.Compose([
                 tr.RandomHorizontalFlip(p=1),
-                tr.RandomRotation(degrees=90),
+                tr.RandomRotation(degrees=(90, 90)),
                 tr.ToTensor()
             ])
         if augment == "h_flip_180":
             transforms = tr.Compose([
                 tr.RandomHorizontalFlip(p=1),
-                tr.RandomRotation(degrees=180),
+                tr.RandomRotation(degrees=(180, 180)),
                 tr.ToTensor()
             ])
         if augment == "h_flip_270":
             transforms = tr.Compose([
                 tr.RandomHorizontalFlip(p=1),
-                tr.RandomRotation(degrees=270),
+                tr.RandomRotation(degrees=(270, 270)),
                 tr.ToTensor()
             ])
         if augment == "v_flip_90":
             transforms = tr.Compose([
                 tr.RandomVerticalFlip(p=1),
-                tr.RandomRotation(degrees=90),
+                tr.RandomRotation(degrees=(90, 90)),
                 tr.ToTensor()
             ])
         if augment == "v_flip_180":
             transforms = tr.Compose([
                 tr.RandomVerticalFlip(p=1),
-                tr.RandomRotation(degrees=180),
+                tr.RandomRotation(degrees=(180, 180)),
                 tr.ToTensor()
             ])
         if augment == "v_flip_270":
             transforms = tr.Compose([
                 tr.RandomVerticalFlip(p=1),
-                tr.RandomRotation(degrees=270),
+                tr.RandomRotation(degrees=(270, 270)),
                 tr.ToTensor()
             ])
 
         augmented_image = transforms(file)
 
-        normalization_transforms = tr.Compose([
-            Normalization()
-        ])
-
-        normalized_image = normalization_transforms(augmented_image)
-
-        return normalized_image
+        return augmented_image
 
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         img_path_csv = self.__dataset[index][0]
-        # print('Getting file index: ', index)
 
         label = self.__dataset[index][1]
         label_to_index = 0
@@ -237,4 +217,4 @@ class CBISDataset(Dataset):
         return img, torch.tensor(label_to_index)
 
     def __len__(self) -> int:
-        return self.n_dataset
+        return len(self.__dataset)

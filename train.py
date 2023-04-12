@@ -292,18 +292,18 @@ def train_episode(multi_agent: MultiAgent, img_batch: torch.Tensor, epsilon: flo
 
     img_batch = img_batch.to(torch.device(device))
 
-	# step position = (for each step, for each agent, for each image in batch, 2 position values x and y)
+    # step position = (for each step, for each agent, for each image in batch, 2 position values x and y)
     step_positions = torch.zeros(
         steps, *multi_agent.positions.size(), dtype=torch.long,
         device=torch.device(device)
     )
 
-	# step predictions = (for each step, for each image in batch, 2 values: probalibility of benign and malignant)
+    # step predictions = (for each step, for each image in batch, 2 values: probalibility of benign and malignant)
     step_predictions = torch.zeros(
         steps, batch_size, 2, device=torch.device(device)
     )
 
-	# step probabilities = (for each step, for each image in batch, one value for the probability of taking next step?)
+    # step probabilities = (for each step, for each image in batch, one value for the probability of taking next step?)
     step_probabilities = torch.zeros(
         steps, batch_size, device=torch.device(device)
     )

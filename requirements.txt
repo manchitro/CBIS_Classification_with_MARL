@@ -1,0 +1,11 @@
+torch
+torchvision
+tqdm
+matplotlib
+numpy
+Pillow
+scikit-image
+pandas
+mlflow
+jupyter
+kaggle

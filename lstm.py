@@ -11,7 +11,7 @@ class LSTMCell(nn.Module):
         self.lstm = nn.LSTMCell(input_size, hidden_size)
 
     def forward(self, curr_hidden: torch.Tensor, curr_cell: torch.Tensor, info_unit: torch.Tensor):
-        n_agents, batch_size, hidden_size = curr_hidden.size()
+        n_agents, batch_size, _ = curr_hidden.size()
 
         curr_hidden, curr_cell, info_unit = (
             curr_hidden.flatten(0, 1),

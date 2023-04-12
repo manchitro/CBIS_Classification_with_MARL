@@ -8,6 +8,7 @@ from feature_extractor import CBISFeatureExtractor, AgentStateToFeatures
 from messages import MessageEval
 from lstm import LSTMCell
 from policy import ActionPolicy
+from critic import Critic
 from prediction import Prediction
 
 
@@ -19,6 +20,7 @@ class CBISClassifierModel(nn.Module):
     module_belief_unit: str = "belief_unit"
     module_action_unit: str = "action_unit"
     module_action_policy: str = "policy_map"
+    module_actor_critic: str = "actor_critic"
     module_prediction: str = "prediction_map"
 
     param_list: Set[str] = {
@@ -28,6 +30,7 @@ class CBISClassifierModel(nn.Module):
         module_belief_unit,
         module_action_unit,
         module_action_policy,
+        module_actor_critic,
         module_prediction
     }
 
@@ -64,6 +67,7 @@ class CBISClassifierModel(nn.Module):
             self.module_belief_unit: LSTMCell(feature_extractor_module.out_size + state_size + message_size, hidden_belief),
             self.module_action_unit: LSTMCell(feature_extractor_module.out_size + state_size + message_size, hidden_action),
             self.module_action_policy: ActionPolicy(self.n_actions, hidden_action, hidden_layer_size_action),
+            self.module_actor_critic: Critic(hidden_action, hidden_layer_size_action),
             self.module_prediction: Prediction(
                 hidden_belief, self.n_class, hidden_layer_size_belief)
         })
